@@ -31,7 +31,9 @@ function initMap() {
         zoom: 12,
         mapTypeControl: false,
         fullscreenControl: false,
-        streetViewControl: false
+        streetViewControl: false,
+        scrollwheel: true,  // Enable scrollwheel zooming without Ctrl key
+        gestureHandling: 'greedy' // Allow zooming without Ctrl key
     });
     
     // Initialize Google Maps services
