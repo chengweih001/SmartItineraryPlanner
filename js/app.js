@@ -1019,6 +1019,9 @@ function displayItinerary(route) {
     // Clear any existing itinerary
     itineraryContainer.innerHTML = '';
     
+    // Store the route globally for navigation feature
+    window.currentItineraryRoute = route;
+    
     // Start time is the opening time of the first location
     let currentTime = route[0].openTimeMinutes;
     let previousLocation = null;
@@ -1104,6 +1107,188 @@ function displayItinerary(route) {
     `;
     
     itineraryContainer.appendChild(summary);
+    
+    // Add navigation panel
+    addNavigationPanel(route);
+}
+
+// Global variables for navigation
+let selectedPointA = null;
+let selectedPointB = null;
+
+// Add navigation panel to the itinerary
+function addNavigationPanel(route) {
+    // Create navigation panel
+    const navigationPanel = document.createElement('div');
+    navigationPanel.className = 'navigation-panel';
+    navigationPanel.innerHTML = `
+        <h3>Navigate Between Locations</h3>
+        <p class="navigation-instruction">Click on any two locations in the itinerary above to select points A and B, or use the dropdowns below.</p>
+        <div class="navigation-selectors">
+            <select id="navigation-start" aria-label="Starting location">
+                <option value="">Select starting point (A)</option>
+                ${route.map((location, index) => `
+                    <option value="${index}">${index + 1}. ${location.name}</option>
+                `).join('')}
+            </select>
+            <select id="navigation-end" aria-label="Destination">
+                <option value="">Select destination (B)</option>
+                ${route.map((location, index) => `
+                    <option value="${index}">${index + 1}. ${location.name}</option>
+                `).join('')}
+            </select>
+        </div>
+        <button id="open-navigation-btn" class="open-navigation-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M9.05.435c-.58-.58-1.52-.58-2.1 0L.436 6.95c-.58.58-.58 1.519 0 2.098l6.516 6.516c.58.58 1.519.58 2.098 0l6.516-6.516c.58-.58.58-1.519 0-2.098L9.05.435zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.553.553 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>
+                <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8z"/>
+            </svg>
+            Open in Google Maps
+        </button>
+    `;
+    
+    // Add to itinerary container
+    itineraryContainer.appendChild(navigationPanel);
+    
+    // Add event listeners for the selectors and button
+    const startSelect = document.getElementById('navigation-start');
+    const endSelect = document.getElementById('navigation-end');
+    const openNavBtn = document.getElementById('open-navigation-btn');
+    
+    // Add click event listeners to itinerary steps
+    const itinerarySteps = document.querySelectorAll('.itinerary-step');
+    itinerarySteps.forEach((step, index) => {
+        step.dataset.index = index;
+        step.addEventListener('click', () => {
+            handleItineraryStepClick(step, index, route, startSelect, endSelect);
+        });
+    });
+    
+    // Enable/disable button based on selections
+    function updateButtonState() {
+        openNavBtn.disabled = !startSelect.value || !endSelect.value || startSelect.value === endSelect.value;
+    }
+    
+    // Update dropdown when selection changes
+    startSelect.addEventListener('change', () => {
+        const index = parseInt(startSelect.value);
+        if (!isNaN(index)) {
+            // Update the selected point A
+            updateSelectedPointA(index, itinerarySteps);
+        } else {
+            // Clear selection if "Select starting point" is chosen
+            clearSelectedPointA(itinerarySteps);
+        }
+        updateButtonState();
+    });
+    
+    endSelect.addEventListener('change', () => {
+        const index = parseInt(endSelect.value);
+        if (!isNaN(index)) {
+            // Update the selected point B
+            updateSelectedPointB(index, itinerarySteps);
+        } else {
+            // Clear selection if "Select destination" is chosen
+            clearSelectedPointB(itinerarySteps);
+        }
+        updateButtonState();
+    });
+    
+    // Open Google Maps navigation when button is clicked
+    openNavBtn.addEventListener('click', () => {
+        const startIndex = parseInt(startSelect.value);
+        const endIndex = parseInt(endSelect.value);
+        
+        if (startIndex >= 0 && endIndex >= 0 && startIndex !== endIndex) {
+            const startLocation = route[startIndex];
+            const endLocation = route[endIndex];
+            
+            openGoogleMapsNavigation(startLocation, endLocation);
+        }
+    });
+}
+
+// Handle click on an itinerary step
+function handleItineraryStepClick(step, index, route, startSelect, endSelect) {
+    // If neither point is selected, select as point A
+    if (selectedPointA === null && selectedPointB === null) {
+        updateSelectedPointA(index, document.querySelectorAll('.itinerary-step'));
+        startSelect.value = index;
+    }
+    // If point A is selected but not point B, select as point B
+    else if (selectedPointA !== null && selectedPointB === null) {
+        // Don't allow selecting the same point for both A and B
+        if (selectedPointA !== index) {
+            updateSelectedPointB(index, document.querySelectorAll('.itinerary-step'));
+            endSelect.value = index;
+        }
+    }
+    // If both points are selected, start over with this as point A
+    else {
+        clearSelectedPoints(document.querySelectorAll('.itinerary-step'));
+        updateSelectedPointA(index, document.querySelectorAll('.itinerary-step'));
+        startSelect.value = index;
+        endSelect.value = "";
+    }
+    
+    // Update navigation button state
+    const openNavBtn = document.getElementById('open-navigation-btn');
+    openNavBtn.disabled = selectedPointA === null || selectedPointB === null || selectedPointA === selectedPointB;
+}
+
+// Update selected point A
+function updateSelectedPointA(index, steps) {
+    // Clear previous selection
+    clearSelectedPointA(steps);
+    
+    // Set new selection
+    selectedPointA = index;
+    steps[index].classList.add('selected-point-a');
+}
+
+// Update selected point B
+function updateSelectedPointB(index, steps) {
+    // Clear previous selection
+    clearSelectedPointB(steps);
+    
+    // Set new selection
+    selectedPointB = index;
+    steps[index].classList.add('selected-point-b');
+}
+
+// Clear selected point A
+function clearSelectedPointA(steps) {
+    if (selectedPointA !== null) {
+        steps[selectedPointA].classList.remove('selected-point-a');
+        selectedPointA = null;
+    }
+}
+
+// Clear selected point B
+function clearSelectedPointB(steps) {
+    if (selectedPointB !== null) {
+        steps[selectedPointB].classList.remove('selected-point-b');
+        selectedPointB = null;
+    }
+}
+
+// Clear both selected points
+function clearSelectedPoints(steps) {
+    clearSelectedPointA(steps);
+    clearSelectedPointB(steps);
+}
+
+// Open Google Maps navigation in a new tab
+function openGoogleMapsNavigation(startLocation, endLocation) {
+    // Create Google Maps URL for navigation
+    const startCoords = `${startLocation.coordinates.lat},${startLocation.coordinates.lng}`;
+    const endCoords = `${endLocation.coordinates.lat},${endLocation.coordinates.lng}`;
+    
+    // Format: https://www.google.com/maps/dir/?api=1&origin=ORIGIN&destination=DESTINATION&travelmode=driving
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(startCoords)}&destination=${encodeURIComponent(endCoords)}&travelmode=driving`;
+    
+    // Open in a new tab
+    window.open(googleMapsUrl, '_blank');
 }
 
 // Convert minutes since midnight to a formatted time string (HH:MM AM/PM)
