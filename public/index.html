@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Itinerary Planner</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- Google Maps will be loaded dynamically after authentication -->
+</head>
+<body>
+    <div id="auth-header" class="auth-header" style="display: none;">
+        <div class="user-profile">
+            <img id="user-avatar" src="" alt="User avatar">
+            <div class="user-info">
+                <div id="user-name" class="user-name"></div>
+                <div id="user-email" class="user-email"></div>
+            </div>
+            <button id="logout-button" class="logout-button">Logout</button>
+        </div>
+    </div>
+
+    <div id="auth-container" class="auth-container">
+        <h2>Welcome to Smart Itinerary Planner</h2>
+        <p>Plan your perfect day by optimizing visits based on location, open hours, and busy times</p>
+        <p>Please sign in with your Google account to use the application</p>
+        <a href="/auth/google" class="login-button">
+            <div class="icon">
+                <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    <path fill="none" d="M0 0h48v48H0z"/>
+                </svg>
+            </div>
+            <div class="text">Sign in with Google</div>
+        </a>
+    </div>
+
+    <div id="app-container" class="container" style="display: none;">
+        <header>
+            <h1>Smart Itinerary Planner</h1>
+            <p>Plan your perfect day by optimizing visits based on location, open hours, and busy times</p>
+        </header>
+
+        <main>
+            <div class="planner-container">
+                <div class="locations-panel">
+                    <h2>Your Locations</h2>
+                    <form id="location-form">
+                        <div class="form-group">
+                            <label for="location-name">Location Name:</label>
+                            <input type="text" id="location-name" placeholder="Enter location name" required>
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="use-address-as-name" checked>
+                                <label for="use-address-as-name">Use street address as name</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="location-address">Address:</label>
+                            <div class="address-input-container">
+                                <input type="text" id="location-address" placeholder="Enter address" required>
+                                <button type="button" id="map-select-btn" title="Select location on map">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group time-inputs">
+                            <div>
+                                <label for="open-time">Opens at: <span class="optional">(optional)</span></label>
+                                <input type="time" id="open-time">
+                            </div>
+                            <div>
+                                <label for="close-time">Closes at: <span class="optional">(optional)</span></label>
+                                <input type="time" id="close-time">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="open-anytime" checked>
+                                <label for="open-anytime">Open anytime (24/7)</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="visit-duration">Visit Duration (minutes):</label>
+                            <input type="number" id="visit-duration" min="15" step="15" value="60" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="busy-time">Busy Time:</label>
+                            <select id="busy-time">
+                                <option value="morning">Morning (8AM-11AM)</option>
+                                <option value="noon">Noon (11AM-2PM)</option>
+                                <option value="afternoon">Afternoon (2PM-5PM)</option>
+                                <option value="evening">Evening (5PM-8PM)</option>
+                                <option value="none">Not typically busy</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-location">Add Location</button>
+                    </form>
+
+                    <div class="locations-list">
+                        <h3>Added Locations</h3>
+                        <ul id="locations-container"></ul>
+                    </div>
+
+                    <div class="planner-actions">
+                        <button id="generate-itinerary" disabled>Generate Itinerary</button>
+                        <button id="clear-all">Clear All</button>
+                    </div>
+                    
+                    <div class="json-io-section">
+                        <h3>Save & Load Locations</h3>
+                        <div class="json-container">
+                            <textarea id="locations-json" placeholder="Locations data will appear here. You can also paste saved data here to load locations."></textarea>
+                            <div class="json-actions">
+                                <button id="generate-json">Generate JSON</button>
+                                <button id="load-json">Load from JSON</button>
+                                <button id="copy-json" title="Copy to clipboard">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-panel">
+                    <div id="map"></div>
+                    <div class="itinerary-results">
+                        <h2>Your Optimized Itinerary</h2>
+                        <div id="itinerary-container">
+                            <p class="empty-state">Add locations and generate an itinerary to see results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Smart Itinerary Planner &copy; 2025</p>
+        </footer>
+    </div>
+
+    <!-- Authentication and App Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
