@@ -9,6 +9,8 @@ let tempMarker = null;
 let autocomplete;
 let placesService;
 let geocoder;
+let googleMapsApiKey = null;
+let appInitialized = false;
 
 // DOM elements
 const locationForm = document.getElementById('location-form');
@@ -20,9 +22,91 @@ const locationsJsonTextarea = document.getElementById('locations-json');
 const generateJsonBtn = document.getElementById('generate-json');
 const loadJsonBtn = document.getElementById('load-json');
 const copyJsonBtn = document.getElementById('copy-json');
+const apiKeyOverlay = document.getElementById('api-key-overlay');
+const apiKeyInput = document.getElementById('api-key-input');
+const apiKeySubmit = document.getElementById('api-key-submit');
+
+// Check for API key in URL parameters when the page loads
+document.addEventListener('DOMContentLoaded', checkForApiKey);
+
+// Function to check for API key in URL parameters
+function checkForApiKey() {
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiKey = urlParams.get('apiKey');
+    
+    if (apiKey) {
+        // API key found in URL, use it
+        googleMapsApiKey = apiKey;
+        loadGoogleMapsApi(apiKey);
+    } else {
+        // No API key found, show the overlay
+        showApiKeyOverlay();
+    }
+}
+
+// Function to show the API key overlay and disable the app
+function showApiKeyOverlay() {
+    // Grey out the app
+    document.querySelector('.container').classList.add('app-disabled');
+    
+    // Show the overlay
+    apiKeyOverlay.style.display = 'flex';
+    
+    // Set up event listener for the submit button
+    apiKeySubmit.addEventListener('click', handleApiKeySubmit);
+    
+    // Also handle Enter key in the input field
+    apiKeyInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            handleApiKeySubmit();
+        }
+    });
+}
+
+// Function to handle API key submission
+function handleApiKeySubmit() {
+    const apiKey = apiKeyInput.value.trim();
+    
+    if (!apiKey) {
+        alert('Please enter a valid Google Maps API key.');
+        return;
+    }
+    
+    // Add the API key to the URL and reload the page
+    const url = new URL(window.location.href);
+    url.searchParams.set('apiKey', apiKey);
+    window.location.href = url.toString();
+}
+
+// Function to dynamically load the Google Maps API with the provided key
+function loadGoogleMapsApi(apiKey) {
+    // Create the script element
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initMap`;
+    script.async = true;
+    script.defer = true;
+    
+    // Handle API loading errors
+    script.onerror = function() {
+        alert('Error loading Google Maps API. Please check your API key and try again.');
+        // Remove the API key from URL and reload to show the input form again
+        const url = new URL(window.location.href);
+        url.searchParams.delete('apiKey');
+        window.location.href = url.toString();
+    };
+    
+    // Add the script to the document
+    document.body.appendChild(script);
+}
 
 // Initialize the map (callback for Google Maps API)
 function initMap() {
+    // Set flag to indicate app is initialized
+    appInitialized = true;
+    
+    // Remove the disabled class if it was applied
+    document.querySelector('.container').classList.remove('app-disabled');
     // Create a map centered on a default location (San Francisco)
     const defaultLocation = { lat: 37.7749, lng: -122.4194 };
     
