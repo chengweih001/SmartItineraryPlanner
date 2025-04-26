@@ -42,6 +42,19 @@ function initMap() {
     // Add map click event for location selection
     map.on('click', handleMapClick);
     
+    // Add geocoder control for address search
+    const geocoder = L.Control.geocoder({
+        defaultMarkGeocode: false,
+        placeholder: 'Search for address...',
+        errorMessage: 'Nothing found.',
+        suggestMinLength: 3,
+        suggestTimeout: 250,
+        queryMinLength: 1
+    }).addTo(map);
+    
+    // Connect geocoder to address input field
+    setupAddressAutocomplete(geocoder);
+    
     // Try to get user's current location
     if (navigator.geolocation) {
         // Add a loading indicator to the map
@@ -542,6 +555,151 @@ async function handleAddLocation(e) {
         console.error('Error adding location:', error);
         alert('An error occurred while adding the location. Please try again.');
     }
+}
+
+// Setup address autocomplete
+function setupAddressAutocomplete(geocoder) {
+    const addressInput = document.getElementById('location-address');
+    
+    // Connect geocoder to address input
+    geocoder.on('markgeocode', function(e) {
+        const result = e.geocode;
+        const latlng = result.center;
+        
+        // Update address input field
+        addressInput.value = result.name;
+        
+        // If "Use address as name" is checked, update the name field
+        if (document.getElementById('use-address-as-name').checked) {
+            document.getElementById('location-name').value = extractStreetAddress(result.name);
+        }
+        
+        // Remove temporary marker if exists
+        if (tempMarker) {
+            map.removeLayer(tempMarker);
+        }
+        
+        // Add a temporary marker at the selected location
+        const icon = L.divIcon({
+            className: 'temp-marker',
+            html: `<div style="background-color: #e74c3c; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
+            iconSize: [15, 15]
+        });
+        
+        tempMarker = L.marker(latlng, { icon }).addTo(map);
+        
+        // Zoom to the selected location
+        map.setView(latlng, 15);
+        
+        // Focus back on the form
+        setTimeout(() => {
+            // If "Use address as name" is not checked, focus on the name field
+            if (!document.getElementById('use-address-as-name').checked) {
+                document.getElementById('location-name').focus();
+            } else {
+                // Otherwise, focus on the visit duration field
+                document.getElementById('visit-duration').focus();
+            }
+        }, 100);
+    });
+    
+    // Create a custom search button next to the address input
+    const searchButton = document.createElement('button');
+    searchButton.type = 'button';
+    searchButton.className = 'address-search-btn';
+    searchButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+        </svg>
+    `;
+    searchButton.title = 'Search for address';
+    
+    // Insert the search button after the address input
+    addressInput.parentNode.insertBefore(searchButton, addressInput.nextSibling);
+    
+    // Style the search button
+    searchButton.style.backgroundColor = '#3498db';
+    searchButton.style.color = 'white';
+    searchButton.style.border = 'none';
+    searchButton.style.borderRadius = '4px';
+    searchButton.style.width = '40px';
+    searchButton.style.height = '40px';
+    searchButton.style.padding = '8px';
+    searchButton.style.cursor = 'pointer';
+    searchButton.style.display = 'flex';
+    searchButton.style.alignItems = 'center';
+    searchButton.style.justifyContent = 'center';
+    searchButton.style.flexShrink = '0';
+    
+    // Add hover effect
+    searchButton.addEventListener('mouseover', function() {
+        this.style.backgroundColor = '#2980b9';
+    });
+    searchButton.addEventListener('mouseout', function() {
+        this.style.backgroundColor = '#3498db';
+    });
+    
+    // Connect search button to geocoder
+    searchButton.addEventListener('click', function() {
+        // Get the current value of the address input
+        const address = addressInput.value.trim();
+        
+        if (address) {
+            // Use our geocodeAddress function to search for the address
+            geocodeAddress(address).then(coordinates => {
+                if (coordinates) {
+                    // Get the full address using reverse geocoding
+                    reverseGeocode(coordinates.lat, coordinates.lng).then(fullAddress => {
+                        if (fullAddress) {
+                            // Update address input field with the full address
+                            addressInput.value = fullAddress;
+                            
+                            // If "Use address as name" is checked, update the name field
+                            if (document.getElementById('use-address-as-name').checked) {
+                                document.getElementById('location-name').value = extractStreetAddress(fullAddress);
+                            }
+                            
+                            // Remove temporary marker if exists
+                            if (tempMarker) {
+                                map.removeLayer(tempMarker);
+                            }
+                            
+                            // Add a temporary marker at the selected location
+                            const icon = L.divIcon({
+                                className: 'temp-marker',
+                                html: `<div style="background-color: #e74c3c; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
+                                iconSize: [15, 15]
+                            });
+                            
+                            tempMarker = L.marker([coordinates.lat, coordinates.lng], { icon }).addTo(map);
+                            
+                            // Zoom to the selected location
+                            map.setView([coordinates.lat, coordinates.lng], 15);
+                        }
+                    });
+                } else {
+                    alert('Address not found. Please try a different search term.');
+                }
+            }).catch(error => {
+                console.error('Error searching for address:', error);
+                alert('An error occurred while searching for the address. Please try again.');
+            });
+        } else {
+            // If the address input is empty, focus on it
+            addressInput.focus();
+        }
+    });
+    
+    // Connect address input to search button (press Enter to search)
+    addressInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+            // Prevent form submission
+            e.preventDefault();
+            
+            // Trigger search button click
+            searchButton.click();
+        }
+    });
 }
 
 // Geocode an address to get coordinates
