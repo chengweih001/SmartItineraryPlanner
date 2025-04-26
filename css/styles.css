@@ -414,51 +414,51 @@ button:disabled {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-/* Geocoder Control Styling */
-.leaflet-control-geocoder {
+/* Google Places Autocomplete Styling */
+.pac-container {
     border-radius: 4px;
-    background: white;
-    min-width: 26px;
-    min-height: 26px;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin-top: 5px;
 }
 
-.leaflet-control-geocoder-form input {
-    font-size: 14px;
-    padding: 8px 10px;
-    width: 280px;
-    border: none;
-    outline: none;
-    border-radius: 4px;
-}
-
-.leaflet-control-geocoder-alternatives {
-    max-height: 200px;
-    overflow-y: auto;
-    background: white;
-    border-radius: 0 0 4px 4px;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
-}
-
-.leaflet-control-geocoder-alternatives li {
+.pac-item {
     padding: 8px 10px;
     cursor: pointer;
     border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
 }
 
-.leaflet-control-geocoder-alternatives li:hover {
+.pac-item:hover {
     background-color: #f5f7fa;
 }
 
-.leaflet-control-geocoder-alternatives li:last-child {
-    border-bottom: none;
+.pac-item-query {
+    font-size: 14px;
+    color: #2c3e50;
 }
 
-/* Make geocoder control more prominent when address input is focused */
-.leaflet-control-geocoder.leaflet-control-geocoder-expanded {
-    width: 300px;
-    margin-top: 10px;
-    margin-left: 10px;
+.pac-matched {
+    font-weight: bold;
+}
+
+.pac-icon {
+    margin-right: 8px;
+}
+
+/* Google Maps Info Window Styling */
+.gm-style .gm-style-iw-c {
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.gm-style .gm-style-iw-d {
+    overflow: hidden !important;
+    max-height: none !important;
+}
+
+.gm-style .gm-style-iw-t::after {
+    background: linear-gradient(45deg, rgba(255, 255, 255, 1) 50%, rgba(255, 255, 255, 0) 51%, rgba(255, 255, 255, 0) 100%);
 }
 
 /* Numbered Markers */

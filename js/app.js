@@ -2,9 +2,13 @@
 let map;
 let markers = [];
 let locations = [];
-let polyline;
+let directionsService;
+let directionsRenderer;
 let isMapSelectionMode = false;
 let tempMarker = null;
+let autocomplete;
+let placesService;
+let geocoder;
 
 // DOM elements
 const locationForm = document.getElementById('location-form');
@@ -17,21 +21,27 @@ const generateJsonBtn = document.getElementById('generate-json');
 const loadJsonBtn = document.getElementById('load-json');
 const copyJsonBtn = document.getElementById('copy-json');
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', () => {
-    initMap();
-    setupEventListeners();
-});
-
-// Initialize the map
+// Initialize the map (callback for Google Maps API)
 function initMap() {
-    // Create a map with a loading view first
-    map = L.map('map').setView([0, 0], 2);
+    // Create a map centered on a default location (San Francisco)
+    const defaultLocation = { lat: 37.7749, lng: -122.4194 };
     
-    // Add the OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    map = new google.maps.Map(document.getElementById('map'), {
+        center: defaultLocation,
+        zoom: 12,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        streetViewControl: false
+    });
+    
+    // Initialize Google Maps services
+    directionsService = new google.maps.DirectionsService();
+    directionsRenderer = new google.maps.DirectionsRenderer({
+        map: map,
+        suppressMarkers: true // We'll create our own markers
+    });
+    placesService = new google.maps.places.PlacesService(map);
+    geocoder = new google.maps.Geocoder();
     
     // Create a selection indicator
     const selectionIndicator = document.createElement('div');
@@ -40,20 +50,10 @@ function initMap() {
     document.querySelector('.results-panel').appendChild(selectionIndicator);
     
     // Add map click event for location selection
-    map.on('click', handleMapClick);
+    map.addListener('click', handleMapClick);
     
-    // Add geocoder control for address search
-    const geocoder = L.Control.geocoder({
-        defaultMarkGeocode: false,
-        placeholder: 'Search for address...',
-        errorMessage: 'Nothing found.',
-        suggestMinLength: 3,
-        suggestTimeout: 250,
-        queryMinLength: 1
-    }).addTo(map);
-    
-    // Connect geocoder to address input field
-    setupAddressAutocomplete(geocoder);
+    // Set up Google Places Autocomplete for the address input
+    setupAddressAutocomplete();
     
     // Try to get user's current location
     if (navigator.geolocation) {
@@ -67,28 +67,43 @@ function initMap() {
             // Success callback
             (position) => {
                 const { latitude, longitude } = position.coords;
+                const userLocation = { lat: latitude, lng: longitude };
                 
                 // Center map on user's location with higher zoom level
-                map.setView([latitude, longitude], 13);
+                map.setCenter(userLocation);
+                map.setZoom(13);
                 
                 // Remove loading indicator
                 document.querySelector('.map-loading-indicator').remove();
                 
                 // Add a marker for the user's location
-                const userLocationMarker = L.marker([latitude, longitude])
-                    .addTo(map)
-                    .bindPopup('Your current location')
-                    .openPopup();
+                const userLocationMarker = new google.maps.Marker({
+                    position: userLocation,
+                    map: map,
+                    title: 'Your current location',
+                    icon: {
+                        url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                    }
+                });
+                
+                // Add info window for the user's location
+                const infoWindow = new google.maps.InfoWindow({
+                    content: '<div><strong>Your current location</strong></div>'
+                });
+                
+                userLocationMarker.addListener('click', () => {
+                    infoWindow.open(map, userLocationMarker);
+                });
+                
+                // Open the info window by default
+                infoWindow.open(map, userLocationMarker);
                 
                 // Store user location for later use
-                window.userLocation = { lat: latitude, lng: longitude };
+                window.userLocation = userLocation;
             },
             // Error callback
             (error) => {
                 console.warn(`Geolocation error (${error.code}): ${error.message}`);
-                
-                // Fall back to default location (San Francisco)
-                map.setView([37.7749, -122.4194], 12);
                 
                 // Remove loading indicator
                 if (document.querySelector('.map-loading-indicator')) {
@@ -103,10 +118,11 @@ function initMap() {
             }
         );
     } else {
-        // Geolocation not supported, use default location
-        map.setView([37.7749, -122.4194], 12);
         console.warn('Geolocation is not supported by this browser.');
     }
+    
+    // Set up event listeners after map is initialized
+    setupEventListeners();
 }
 
 // Set up event listeners
@@ -146,6 +162,71 @@ function setupEventListeners() {
     
     // Initialize name field state based on checkbox
     toggleNameField();
+}
+
+// Setup Google Places Autocomplete for address input
+function setupAddressAutocomplete() {
+    const addressInput = document.getElementById('location-address');
+    
+    // Create the autocomplete object
+    autocomplete = new google.maps.places.Autocomplete(addressInput, {
+        fields: ['address_components', 'formatted_address', 'geometry', 'name'],
+        types: ['establishment', 'geocode']
+    });
+    
+    // When a place is selected from the dropdown
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        
+        if (!place.geometry) {
+            // User entered the name of a place that was not suggested
+            console.warn("No details available for input: '" + place.name + "'");
+            return;
+        }
+        
+        // Get the selected place's address and location
+        const address = place.formatted_address;
+        const location = place.geometry.location;
+        
+        // Update address input with the full address
+        addressInput.value = address;
+        
+        // If "Use address as name" is checked, update the name field
+        if (document.getElementById('use-address-as-name').checked) {
+            document.getElementById('location-name').value = extractStreetAddress(address);
+        }
+        
+        // Remove temporary marker if exists
+        if (tempMarker) {
+            tempMarker.setMap(null);
+            tempMarker = null;
+        }
+        
+        // Add a temporary marker at the selected location
+        tempMarker = new google.maps.Marker({
+            position: location,
+            map: map,
+            icon: {
+                url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+            },
+            animation: google.maps.Animation.DROP
+        });
+        
+        // Zoom to the selected location
+        map.setCenter(location);
+        map.setZoom(15);
+        
+        // Focus on the next field
+        setTimeout(() => {
+            // If "Use address as name" is not checked, focus on the name field
+            if (!document.getElementById('use-address-as-name').checked) {
+                document.getElementById('location-name').focus();
+            } else {
+                // Otherwise, focus on the visit duration field
+                document.getElementById('visit-duration').focus();
+            }
+        }, 100);
+    });
 }
 
 // Generate JSON string from locations array
@@ -376,12 +457,16 @@ function toggleMapSelectionMode() {
     if (isMapSelectionMode) {
         mapContainer.classList.add('map-selection-active');
         // Scroll to map if it's not visible
-        map.getContainer().scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Change cursor to crosshair
+        map.setOptions({ draggableCursor: 'crosshair' });
     } else {
         mapContainer.classList.remove('map-selection-active');
+        // Reset cursor
+        map.setOptions({ draggableCursor: null });
         // Remove temporary marker if exists
         if (tempMarker) {
-            map.removeLayer(tempMarker);
+            tempMarker.setMap(null);
             tempMarker = null;
         }
     }
@@ -391,24 +476,25 @@ function toggleMapSelectionMode() {
 function handleMapClick(e) {
     if (!isMapSelectionMode) return;
     
-    const { lat, lng } = e.latlng;
+    const latLng = e.latLng;
     
     // Remove previous temporary marker if exists
     if (tempMarker) {
-        map.removeLayer(tempMarker);
+        tempMarker.setMap(null);
     }
     
     // Add a temporary marker at the clicked location
-    const icon = L.divIcon({
-        className: 'temp-marker',
-        html: `<div style="background-color: #e74c3c; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
-        iconSize: [15, 15]
+    tempMarker = new google.maps.Marker({
+        position: latLng,
+        map: map,
+        icon: {
+            url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+        },
+        animation: google.maps.Animation.DROP
     });
     
-    tempMarker = L.marker([lat, lng], { icon }).addTo(map);
-    
     // Perform reverse geocoding to get the address
-    reverseGeocode(lat, lng)
+    reverseGeocode(latLng)
         .then(address => {
             if (address) {
                 document.getElementById('location-address').value = address;
@@ -419,56 +505,47 @@ function handleMapClick(e) {
 }
 
 // Reverse geocode coordinates to get address
-async function reverseGeocode(lat, lng) {
-    try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
-        const data = await response.json();
-        
-        if (data && data.display_name) {
-            // If "Use address as name" is checked, update the name field
-            if (document.getElementById('use-address-as-name').checked) {
-                let streetAddress = '';
+async function reverseGeocode(latLng) {
+    return new Promise((resolve, reject) => {
+        geocoder.geocode({ location: latLng }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                const address = results[0].formatted_address;
                 
-                // Try to extract a more user-friendly street address from the address details
-                if (data.address) {
-                    const parts = [];
+                // If "Use address as name" is checked, update the name field
+                if (document.getElementById('use-address-as-name').checked) {
+                    let streetAddress = '';
                     
-                    // Add house number if available
-                    if (data.address.house_number) {
-                        parts.push(data.address.house_number);
+                    // Try to extract a more user-friendly street address
+                    const addressComponents = results[0].address_components;
+                    const streetNumber = addressComponents.find(component => 
+                        component.types.includes('street_number')
+                    );
+                    const route = addressComponents.find(component => 
+                        component.types.includes('route')
+                    );
+                    
+                    if (streetNumber && route) {
+                        streetAddress = `${streetNumber.short_name} ${route.long_name}`;
+                    } else if (route) {
+                        streetAddress = route.long_name;
                     }
                     
-                    // Add road/street name if available
-                    if (data.address.road) {
-                        parts.push(data.address.road);
-                    } else if (data.address.pedestrian) {
-                        parts.push(data.address.pedestrian);
-                    } else if (data.address.footway) {
-                        parts.push(data.address.footway);
+                    // If we couldn't extract a street address, fall back to the first part of the address
+                    if (!streetAddress) {
+                        streetAddress = extractStreetAddress(address);
                     }
                     
-                    // If we have parts, join them to form the street address
-                    if (parts.length > 0) {
-                        streetAddress = parts.join(' ');
-                    }
+                    document.getElementById('location-name').value = streetAddress;
                 }
                 
-                // If we couldn't extract a street address, fall back to the first part of the display name
-                if (!streetAddress) {
-                    streetAddress = extractStreetAddress(data.display_name);
-                }
-                
-                document.getElementById('location-name').value = streetAddress;
+                resolve(address);
+            } else {
+                console.error('Reverse geocoding error:', status);
+                alert('Could not get address for this location. Please try again or enter manually.');
+                reject(new Error(`Geocoder failed due to: ${status}`));
             }
-            
-            return data.display_name;
-        }
-        return null;
-    } catch (error) {
-        console.error('Reverse geocoding error:', error);
-        alert('Could not get address for this location. Please try again or enter manually.');
-        return null;
-    }
+        });
+    });
 }
 
 // Validate time input to ensure it's in the correct format
@@ -511,7 +588,7 @@ async function handleAddLocation(e) {
     }
     
     try {
-        // Get coordinates for the address using Nominatim API
+        // Get coordinates for the address using Google Geocoding API
         const coordinates = await geocodeAddress(address);
         
         if (!coordinates) {
@@ -557,190 +634,56 @@ async function handleAddLocation(e) {
     }
 }
 
-// Setup address autocomplete
-function setupAddressAutocomplete(geocoder) {
-    const addressInput = document.getElementById('location-address');
-    
-    // Connect geocoder to address input
-    geocoder.on('markgeocode', function(e) {
-        const result = e.geocode;
-        const latlng = result.center;
-        
-        // Update address input field
-        addressInput.value = result.name;
-        
-        // If "Use address as name" is checked, update the name field
-        if (document.getElementById('use-address-as-name').checked) {
-            document.getElementById('location-name').value = extractStreetAddress(result.name);
-        }
-        
-        // Remove temporary marker if exists
-        if (tempMarker) {
-            map.removeLayer(tempMarker);
-        }
-        
-        // Add a temporary marker at the selected location
-        const icon = L.divIcon({
-            className: 'temp-marker',
-            html: `<div style="background-color: #e74c3c; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
-            iconSize: [15, 15]
-        });
-        
-        tempMarker = L.marker(latlng, { icon }).addTo(map);
-        
-        // Zoom to the selected location
-        map.setView(latlng, 15);
-        
-        // Focus back on the form
-        setTimeout(() => {
-            // If "Use address as name" is not checked, focus on the name field
-            if (!document.getElementById('use-address-as-name').checked) {
-                document.getElementById('location-name').focus();
-            } else {
-                // Otherwise, focus on the visit duration field
-                document.getElementById('visit-duration').focus();
-            }
-        }, 100);
-    });
-    
-    // Create a custom search button next to the address input
-    const searchButton = document.createElement('button');
-    searchButton.type = 'button';
-    searchButton.className = 'address-search-btn';
-    searchButton.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
-        </svg>
-    `;
-    searchButton.title = 'Search for address';
-    
-    // Insert the search button after the address input
-    addressInput.parentNode.insertBefore(searchButton, addressInput.nextSibling);
-    
-    // Style the search button
-    searchButton.style.backgroundColor = '#3498db';
-    searchButton.style.color = 'white';
-    searchButton.style.border = 'none';
-    searchButton.style.borderRadius = '4px';
-    searchButton.style.width = '40px';
-    searchButton.style.height = '40px';
-    searchButton.style.padding = '8px';
-    searchButton.style.cursor = 'pointer';
-    searchButton.style.display = 'flex';
-    searchButton.style.alignItems = 'center';
-    searchButton.style.justifyContent = 'center';
-    searchButton.style.flexShrink = '0';
-    
-    // Add hover effect
-    searchButton.addEventListener('mouseover', function() {
-        this.style.backgroundColor = '#2980b9';
-    });
-    searchButton.addEventListener('mouseout', function() {
-        this.style.backgroundColor = '#3498db';
-    });
-    
-    // Connect search button to geocoder
-    searchButton.addEventListener('click', function() {
-        // Get the current value of the address input
-        const address = addressInput.value.trim();
-        
-        if (address) {
-            // Use our geocodeAddress function to search for the address
-            geocodeAddress(address).then(coordinates => {
-                if (coordinates) {
-                    // Get the full address using reverse geocoding
-                    reverseGeocode(coordinates.lat, coordinates.lng).then(fullAddress => {
-                        if (fullAddress) {
-                            // Update address input field with the full address
-                            addressInput.value = fullAddress;
-                            
-                            // If "Use address as name" is checked, update the name field
-                            if (document.getElementById('use-address-as-name').checked) {
-                                document.getElementById('location-name').value = extractStreetAddress(fullAddress);
-                            }
-                            
-                            // Remove temporary marker if exists
-                            if (tempMarker) {
-                                map.removeLayer(tempMarker);
-                            }
-                            
-                            // Add a temporary marker at the selected location
-                            const icon = L.divIcon({
-                                className: 'temp-marker',
-                                html: `<div style="background-color: #e74c3c; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>`,
-                                iconSize: [15, 15]
-                            });
-                            
-                            tempMarker = L.marker([coordinates.lat, coordinates.lng], { icon }).addTo(map);
-                            
-                            // Zoom to the selected location
-                            map.setView([coordinates.lat, coordinates.lng], 15);
-                        }
-                    });
-                } else {
-                    alert('Address not found. Please try a different search term.');
-                }
-            }).catch(error => {
-                console.error('Error searching for address:', error);
-                alert('An error occurred while searching for the address. Please try again.');
-            });
-        } else {
-            // If the address input is empty, focus on it
-            addressInput.focus();
-        }
-    });
-    
-    // Connect address input to search button (press Enter to search)
-    addressInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
-            // Prevent form submission
-            e.preventDefault();
-            
-            // Trigger search button click
-            searchButton.click();
-        }
-    });
-}
-
 // Geocode an address to get coordinates
 async function geocodeAddress(address) {
-    try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
-        const data = await response.json();
-        
-        if (data && data.length > 0) {
-            return {
-                lat: parseFloat(data[0].lat),
-                lng: parseFloat(data[0].lon)
-            };
-        }
-        return null;
-    } catch (error) {
-        console.error('Geocoding error:', error);
-        return null;
-    }
+    return new Promise((resolve, reject) => {
+        geocoder.geocode({ address: address }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                const location = results[0].geometry.location;
+                resolve({
+                    lat: location.lat(),
+                    lng: location.lng()
+                });
+            } else {
+                console.error('Geocoding error:', status);
+                reject(new Error(`Geocoder failed due to: ${status}`));
+                resolve(null);
+            }
+        });
+    });
 }
 
 // Add a marker to the map
 function addMarkerToMap(location) {
-    const marker = L.marker([location.coordinates.lat, location.coordinates.lng])
-        .addTo(map)
-        .bindPopup(`<b>${location.name}</b><br>${location.address}`);
+    const marker = new google.maps.Marker({
+        position: location.coordinates,
+        map: map,
+        title: location.name
+    });
+    
+    // Add info window
+    const infoWindow = new google.maps.InfoWindow({
+        content: `<div><strong>${location.name}</strong><br>${location.address}</div>`
+    });
+    
+    marker.addListener('click', () => {
+        infoWindow.open(map, marker);
+    });
     
     markers.push({
         id: location.id,
-        marker
+        marker: marker,
+        infoWindow: infoWindow
     });
     
     // Adjust map view to include all markers
     if (markers.length === 1) {
-        map.setView([location.coordinates.lat, location.coordinates.lng], 12);
+        map.setCenter(location.coordinates);
+        map.setZoom(12);
     } else {
-        const bounds = L.latLngBounds(markers.map(m => [
-            m.marker.getLatLng().lat,
-            m.marker.getLatLng().lng
-        ]));
-        map.fitBounds(bounds, { padding: [50, 50] });
+        const bounds = new google.maps.LatLngBounds();
+        markers.forEach(m => bounds.extend(m.marker.getPosition()));
+        map.fitBounds(bounds);
     }
 }
 
@@ -807,7 +750,7 @@ function removeLocation(id) {
     // Remove the marker from the map
     const markerIndex = markers.findIndex(m => m.id === id);
     if (markerIndex !== -1) {
-        map.removeLayer(markers[markerIndex].marker);
+        markers[markerIndex].marker.setMap(null);
         markers.splice(markerIndex, 1);
     }
     
@@ -821,11 +764,9 @@ function removeLocation(id) {
         clearItinerary();
     }
     
-    // Remove the route line if it exists
-    if (polyline) {
-        map.removeLayer(polyline);
-        polyline = null;
-    }
+    // Clear directions if they exist
+    directionsRenderer.setMap(null);
+    directionsRenderer.setMap(map);
 }
 
 // Clear all locations and reset the app
@@ -837,14 +778,12 @@ function clearAll() {
     locationsContainer.innerHTML = '';
     
     // Clear all markers from the map
-    markers.forEach(m => map.removeLayer(m.marker));
+    markers.forEach(m => m.marker.setMap(null));
     markers = [];
     
-    // Remove the route line if it exists
-    if (polyline) {
-        map.removeLayer(polyline);
-        polyline = null;
-    }
+    // Clear directions if they exist
+    directionsRenderer.setMap(null);
+    directionsRenderer.setMap(map);
     
     // Disable the generate button
     generateItineraryBtn.disabled = true;
@@ -853,7 +792,8 @@ function clearAll() {
     clearItinerary();
     
     // Reset the map view
-    map.setView([37.7749, -122.4194], 12);
+    map.setCenter({ lat: 37.7749, lng: -122.4194 });
+    map.setZoom(12);
 }
 
 // Clear the itinerary
@@ -1247,48 +1187,69 @@ function formatDuration(minutes) {
 
 // Draw the route on the map
 function drawRouteOnMap(route) {
-    // Remove existing polyline if it exists
-    if (polyline) {
-        map.removeLayer(polyline);
-    }
+    // Clear existing directions
+    directionsRenderer.setMap(null);
+    directionsRenderer.setMap(map);
     
-    // Create an array of points for the polyline
-    const points = route.map(location => [
-        location.coordinates.lat,
-        location.coordinates.lng
-    ]);
+    // Create waypoints for the route
+    const waypoints = route.slice(1, -1).map(location => ({
+        location: new google.maps.LatLng(location.coordinates.lat, location.coordinates.lng),
+        stopover: true
+    }));
     
-    // Create a polyline and add it to the map
-    polyline = L.polyline(points, {
-        color: '#3498db',
-        weight: 5,
-        opacity: 0.7
-    }).addTo(map);
+    // Create request for directions service
+    const request = {
+        origin: new google.maps.LatLng(route[0].coordinates.lat, route[0].coordinates.lng),
+        destination: new google.maps.LatLng(
+            route[route.length - 1].coordinates.lat,
+            route[route.length - 1].coordinates.lng
+        ),
+        waypoints: waypoints,
+        optimizeWaypoints: false,
+        travelMode: google.maps.TravelMode.DRIVING
+    };
     
-    // Add numbered markers to indicate the order
-    route.forEach((location, index) => {
-        // Find and remove the existing marker for this location
-        const markerIndex = markers.findIndex(m => m.id === location.id);
-        if (markerIndex !== -1) {
-            map.removeLayer(markers[markerIndex].marker);
+    // Get directions from the directions service
+    directionsService.route(request, (result, status) => {
+        if (status === 'OK') {
+            // Display the route
+            directionsRenderer.setDirections(result);
             
-            // Create a new marker with the location number
-            const icon = L.divIcon({
-                className: 'numbered-marker',
-                html: `<div>${index + 1}</div>`,
-                iconSize: [30, 30]
+            // Add numbered markers to indicate the order
+            route.forEach((location, index) => {
+                // Find and remove the existing marker for this location
+                const markerIndex = markers.findIndex(m => m.id === location.id);
+                if (markerIndex !== -1) {
+                    markers[markerIndex].marker.setMap(null);
+                    
+                    // Create a new marker with the location number
+                    const marker = new google.maps.Marker({
+                        position: location.coordinates,
+                        map: map,
+                        label: {
+                            text: (index + 1).toString(),
+                            color: 'white'
+                        },
+                        title: location.name
+                    });
+                    
+                    // Add info window
+                    const infoWindow = new google.maps.InfoWindow({
+                        content: `<div><strong>${location.name}</strong><br>${location.address}</div>`
+                    });
+                    
+                    marker.addListener('click', () => {
+                        infoWindow.open(map, marker);
+                    });
+                    
+                    // Update the marker in our array
+                    markers[markerIndex].marker = marker;
+                    markers[markerIndex].infoWindow = infoWindow;
+                }
             });
-            
-            const marker = L.marker([location.coordinates.lat, location.coordinates.lng], { icon })
-                .addTo(map)
-                .bindPopup(`<b>${location.name}</b><br>${location.address}`);
-            
-            // Update the marker in our array
-            markers[markerIndex].marker = marker;
+        } else {
+            console.error('Directions request failed due to ' + status);
+            alert('Could not display the route on the map. Please try again.');
         }
     });
-    
-    // Fit the map to show all markers
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, { padding: [50, 50] });
 }
